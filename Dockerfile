@@ -1,6 +1,6 @@
 FROM golang:alpine as builder
 
-WORKDIR /go-auth-svc
+WORKDIR /GoAuthSvc
 
 COPY go.mod .
 COPY go.sum .
@@ -12,11 +12,11 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main ./cmd/
 
 FROM alpine
 
-WORKDIR /go-auth-svc
+WORKDIR /GoAuthSvc
 
-COPY --from=builder /go-auth-svc/main /go-auth-svc/main
-COPY --from=builder /go-auth-svc/pkg/config/envs/*.env /go-auth-svc/
+COPY --from=builder /GoAuthSvc/main /GoAuthSvc/main
+COPY --from=builder /GoAuthSvc/pkg/config/envs/*.env /GoAuthSvc/
 
-RUN chmod +x /go-auth-svc/main
+RUN chmod +x /GoAuthSvc/main
 
 CMD ["./main"]
