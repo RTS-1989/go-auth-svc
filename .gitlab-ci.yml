@@ -1,0 +1,68 @@
+stages:
+  - build
+  - test
+  - push
+  - deploy
+
+image:
+  name: docker:latest
+
+services:
+  - name: docker:dind
+    alias: thedockerhost
+
+variables:
+  PUBLIC_REGISTRY_HOST: docker.io
+  PUBLIC_REGISTRY_OWNER: supercat89
+  PUBLIC_REGISTRY_APP_NAME: go-auth-svc
+  CI_COMMIT_REF_NAME: main
+  DOCKER_HOST: tcp://thedockerhost:2375/
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  TAG_LATEST: $PUBLIC_REGISTRY_HOST/$PUBLIC_REGISTRY_OWNER/$PUBLIC_REGISTRY_APP_NAME:latest
+  TAG_COMMIT: $PUBLIC_REGISTRY_HOST/$PUBLIC_REGISTRY_OWNER/PUBLIC_REGISTRY_APP_NAME/$CI_COMMIT_REF_NAME:$CI_COMMIT_SHORT_SHA
+  SUCCESS: New $PUBLIC_REGISTRY_HOST/$IMAGE_NAME image ready!
+  BUILD_SUCCESS: $PUBLIC_REGISTRY_APP_NAME was successfully built!
+
+build_app:
+  stage: build
+  image: golang:1.19
+  script:
+    - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./$PUBLIC_REGISTRY_APP_NAME ./cmd/
+    - echo $BUILD_SUCCESS
+
+test:
+  stage: test
+  script:
+    - echo "Testing..."
+
+push_image:
+  stage: push
+  before_script:
+    - cp $DOT_ENV .env
+    - cp $PROD_ENV ./pkg/config/envs/prod.env
+    - ls -lah ./pkg/config/envs/
+    - docker login $PUBLIC_REGISTRY_HOST -u $REGISTRY_USER -p $REGISTRY_PASS
+  script:
+    - docker build -t $TAG_LATEST .
+    - docker push $TAG_LATEST
+    - echo $SUCCESS
+
+deploy:
+  image: alpine:latest
+  stage: deploy
+  tags:
+    - deployment
+  script:
+    - chmod og= $ID_RSA
+    - apk update && apk add openssh-client
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker login $PUBLIC_REGISTRY_HOST -u $REGISTRY_USER -p $REGISTRY_PASS"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker pull $TAG_LATEST"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker container rm -f $PUBLIC_REGISTRY_APP_NAME || true"
+    - ssh -i $ID_RSA -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "docker run -d --expose $PORT -p $PORT:$PORT --name $PUBLIC_REGISTRY_APP_NAME $TAG_LATEST"
+  environment:
+    name: production
+    url: http://$SERVER_IP
+  only:
+    - master
+  when: manual
